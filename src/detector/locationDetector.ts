@@ -5,45 +5,43 @@ import { Snapshot } from '../store/snapshot';
 
 export interface LocationMatch {
 	snapshot: Snapshot;
-	rangoActual: [number, number];
+	currentRange: [number, number];
 	drift: boolean;
 }
 
-// margen de líneas alrededor del rango del snapshot que todavía cuenta como
-// "cerca" — evita exigir que el cursor esté exactamente en la línea, pero
-// sigue exigiendo que la edición sea local a la zona del fix, no en
-// cualquier parte del archivo
-const MARGEN_CERCANIA_LINEAS = 3;
+// margin of lines around the snapshot's range that still counts as "near" —
+// avoids requiring the cursor to sit on the exact line, while still
+// requiring the edit to be local to the fix area, not anywhere in the file
+const PROXIMITY_MARGIN_LINES = 3;
 
-async function blameMap(git: SimpleGit, archivo: string): Promise<Map<number, string>> {
+async function blameMap(git: SimpleGit, file: string): Promise<Map<number, string>> {
 	const map = new Map<number, string>();
 	try {
-		const output = await git.raw(['blame', '--porcelain', '--', archivo]);
+		const output = await git.raw(['blame', '--porcelain', '--', file]);
 		const lineRegex = /^([0-9a-f]{40}) \d+ (\d+)/gm;
 		let m: RegExpExecArray | null;
 		while ((m = lineRegex.exec(output)) !== null) {
 			map.set(parseInt(m[2], 10), m[1]);
 		}
 	} catch {
-		// archivo sin historial en git (nuevo/no trackeado) — sin blame no hay drift que rastrear
+		// file has no git history (new/untracked) — no blame, nothing to track drift against
 	}
 	return map;
 }
 
 /**
- * Match "por ubicación": compara archivo + rango de líneas contra snapshots
- * existentes, usando `git blame` para seguir el bloque de código aunque haya
- * cambiado de línea (drift) — el match sigue siendo válido mientras las
- * líneas actuales sigan atribuidas al commit_fix del snapshot (sin tocar
- * desde entonces). Si ya fueron editadas de nuevo, se considera fuera del
- * umbral "match exacto" del MVP.
+ * "By location" match: compares file + line range against existing
+ * snapshots, using `git blame` to follow the code block even if it moved
+ * (drift) — the match stays valid while the current lines are still
+ * attributed to the snapshot's fixCommit (untouched since then). If they've
+ * been edited again, it's considered outside the MVP's "exact match"
+ * threshold.
  *
- * Además de la ubicación en sí, exige que `activeLine` (la línea del cursor
- * al momento de guardar, 0-indexed) esté dentro del rango actual del
- * snapshot o a lo sumo `MARGEN_CERCANIA_LINEAS` líneas de distancia. Sin
- * esto, cualquier guardado del archivo —tocaras lo que tocaras— mostraba el
- * fantasma anclado en las líneas del fix, sin relación con lo que se estaba
- * editando realmente.
+ * On top of location itself, it requires `activeLine` (the cursor's line
+ * at save time, 0-indexed) to be within the snapshot's current range, or at
+ * most `PROXIMITY_MARGIN_LINES` lines away. Without this, any save of the
+ * file — no matter what was touched — showed the ghost anchored at the
+ * fix's lines, unrelated to what was actually being edited.
  */
 export async function detectByLocation(
 	workspaceRoot: string,
@@ -55,40 +53,40 @@ export async function detectByLocation(
 		return [];
 	}
 
-	const relPath = path.relative(workspaceRoot, document.uri.fsPath).replace(/\\/g, '/');
-	const candidatos = snapshots.filter((s) => s.archivo === relPath);
-	if (candidatos.length === 0) {
+	const relativePath = path.relative(workspaceRoot, document.uri.fsPath).replace(/\\/g, '/');
+	const candidates = snapshots.filter((s) => s.file === relativePath);
+	if (candidates.length === 0) {
 		return [];
 	}
 
 	const git = simpleGit(workspaceRoot);
-	const blame = await blameMap(git, relPath);
+	const blame = await blameMap(git, relativePath);
 	if (blame.size === 0) {
 		return [];
 	}
 
-	const lineaEditada = activeLine + 1; // git blame es 1-indexed, vscode.Position es 0-indexed
+	const editedLine = activeLine + 1; // git blame is 1-indexed, vscode.Position is 0-indexed
 
 	const matches: LocationMatch[] = [];
-	for (const snapshot of candidatos) {
-		const lineas = [...blame.entries()]
-			.filter(([, sha]) => sha === snapshot.commit_fix)
-			.map(([linea]) => linea);
+	for (const snapshot of candidates) {
+		const lines = [...blame.entries()]
+			.filter(([, sha]) => sha === snapshot.fixCommit)
+			.map(([line]) => line);
 
-		if (lineas.length === 0) {
+		if (lines.length === 0) {
 			continue;
 		}
 
-		const rangoActual: [number, number] = [Math.min(...lineas), Math.max(...lineas)];
-		const cerca =
-			lineaEditada >= rangoActual[0] - MARGEN_CERCANIA_LINEAS &&
-			lineaEditada <= rangoActual[1] + MARGEN_CERCANIA_LINEAS;
-		if (!cerca) {
+		const currentRange: [number, number] = [Math.min(...lines), Math.max(...lines)];
+		const isNear =
+			editedLine >= currentRange[0] - PROXIMITY_MARGIN_LINES &&
+			editedLine <= currentRange[1] + PROXIMITY_MARGIN_LINES;
+		if (!isNear) {
 			continue;
 		}
 
-		const drift = rangoActual[0] !== snapshot.rango_lineas[0] || rangoActual[1] !== snapshot.rango_lineas[1];
-		matches.push({ snapshot, rangoActual, drift });
+		const drift = currentRange[0] !== snapshot.lineRange[0] || currentRange[1] !== snapshot.lineRange[1];
+		matches.push({ snapshot, currentRange, drift });
 	}
 
 	return matches;

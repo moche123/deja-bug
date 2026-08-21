@@ -40,7 +40,7 @@ export function startGitWatcher(
 	console.log(`[dejabug] startGitWatcher workspaceRoot=${workspaceRoot}`);
 
 	if (!isGitRepo(workspaceRoot)) {
-		console.log('[dejabug] no es repo git, watcher no arranca');
+		console.log('[dejabug] not a git repo, watcher not starting');
 		return;
 	}
 
@@ -49,17 +49,17 @@ export function startGitWatcher(
 	const watcher = vscode.workspace.createFileSystemWatcher(headLogPattern);
 
 	const checkLatestCommit = async () => {
-		console.log('[dejabug] .git/logs/HEAD cambió, leyendo último commit');
+		console.log('[dejabug] .git/logs/HEAD changed, reading latest commit');
 		const log = await git.log({ maxCount: 1 });
 		const latest = log.latest;
 		if (!latest) {
-			console.log('[dejabug] git log no devolvió commits');
+			console.log('[dejabug] git log returned no commits');
 			return;
 		}
 
-		console.log(`[dejabug] último commit: ${latest.hash} "${latest.message}"`);
+		console.log(`[dejabug] latest commit: ${latest.hash} "${latest.message}"`);
 		const refs = parseIssueRefs(latest.message);
-		console.log(`[dejabug] refs detectados: ${JSON.stringify(refs)}`);
+		console.log(`[dejabug] refs detected: ${JSON.stringify(refs)}`);
 		if (refs.length > 0) {
 			onBugFixCommit({ hash: latest.hash, message: latest.message, refs });
 		}
@@ -69,5 +69,5 @@ export function startGitWatcher(
 	watcher.onDidCreate(checkLatestCommit);
 
 	context.subscriptions.push(watcher);
-	console.log('[dejabug] watcher de .git/logs/HEAD registrado');
+	console.log('[dejabug] .git/logs/HEAD watcher registered');
 }

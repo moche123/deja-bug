@@ -24,9 +24,9 @@ export async function saveSnapshot(workspaceRoot: string, input: NewSnapshotInpu
 	const snapshot: Snapshot = {
 		...input,
 		id: randomUUID(),
-		fecha: new Date().toISOString(),
-		veces_mostrado: 0,
-		veces_util: 0,
+		date: new Date().toISOString(),
+		timesShown: 0,
+		timesUseful: 0,
 	};
 
 	await fs.writeFile(snapshotFile(workspaceRoot, snapshot.id), JSON.stringify(snapshot, null, 2), 'utf-8');
@@ -53,7 +53,7 @@ export async function loadAllSnapshots(workspaceRoot: string): Promise<Snapshot[
 export async function updateSnapshotStats(
 	workspaceRoot: string,
 	id: string,
-	field: 'veces_mostrado' | 'veces_util'
+	field: 'timesShown' | 'timesUseful'
 ): Promise<Snapshot> {
 	const file = snapshotFile(workspaceRoot, id);
 	const raw = await fs.readFile(file, 'utf-8');

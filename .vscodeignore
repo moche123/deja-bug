@@ -12,3 +12,8 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+# .dejabug/ is runtime data (created by the extension itself when saving
+# snapshots), not extension source — never ship it inside the .vsix
+.dejabug/**
+# leftover throwaway files from manual Git Watcher testing (Paso 2)
+prueba*.txt

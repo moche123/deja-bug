@@ -3,8 +3,9 @@
   "displayName": "DejaBug",
   "description": "Detect potential code bugs patterns and it warns that you're going back to these",
   "version": "0.0.1",
+  "publisher": "local-dev",
   "engines": {
-    "vscode": "^1.133.0"
+    "vscode": "^1.134.0"
   },
   "categories": [
     "Other"
@@ -18,6 +19,22 @@
       {
         "command": "dejabug.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "dejabug.markUseful",
+        "title": "DejaBug: Mark as Useful"
+      },
+      {
+        "command": "dejabug.markNotRelevant",
+        "title": "DejaBug: Mark as Not Relevant"
+      },
+      {
+        "command": "dejabug.createSnapshotFromSelection",
+        "title": "DejaBug: Create Snapshot from Selection"
+      },
+      {
+        "command": "dejabug.listSnapshots",
+        "title": "DejaBug: View All Snapshots"
       }
     ]
   },
@@ -41,6 +58,7 @@
     "@types/vscode": "^1.134.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "npm-run-all": "^4.1.5",

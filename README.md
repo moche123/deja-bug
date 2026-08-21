@@ -1,71 +1,33 @@
-# dejabug README
+# DejaBug 👻
 
-This is the README for your extension "dejabug". After writing up a brief description, we recommend including the following sections.
+DejaBug captures the context of every bug fixed in your repo as a **snapshot** (why it happened, how it was fixed, in which commit) and watches new code you write in the background to detect matches against those snapshots. When it finds one, it shows a discreet warning — a "ghost" 👻 — in the gutter, with a CodeLens and a hover card summarizing the fix and linking back to it.
+
+It's not a fixed-rule linter: it's the team's collective memory, triggered by code proximity.
+
+This is the **MVP (Phase 1)** state. The full step-by-step of how it was built lives in `MVP_FASE1.md` at the root of the repo.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- **Automatic snapshot from commits.** Committing with a message that follows the `Fixes #123` / `Closes #123` convention (or `Fixes JIRA-456` for letter-prefixed trackers) makes DejaBug draft a snapshot from the fix's diff and ask you to confirm before saving anything — it never saves without you reviewing it first.
+- **Location-based detection.** Saving a file again near a line that had a fix, while that line is still untouched since then, shows the ghost.
+- **Symbol-based detection.** A function/class with the same name as one that had a fix, in a different file, also shows the ghost — regardless of location.
+- **Quick actions.** Every ghost has "👍 Useful" and "👎 Not relevant" buttons to feed back into the system (the basis for future phases' noise tuning).
+- **Manual commands.** `DejaBug: Create Snapshot from Selection` (for fixes that didn't follow the commit convention) and `DejaBug: View All Snapshots` (browse `.dejabug/` without reading JSON by hand).
+- **100% local.** Everything runs on your machine, no external API calls or team sync — that comes in future phases, always optional and self-hostable.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- A git repo (a workspace with `.git/`) — without this, the Git Watcher and the Proximity Detector never start.
+- No extra settings or extensions required for normal use.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- **Phase 1 detects by location and symbol, not by logic.** A brand new function with the same name as one that had a fix will show the ghost even if its logic has nothing to do with the original bug (expected false positive). The same bug reintroduced under a different name, somewhere else, won't be detected (expected false negative). Structural (AST) and semantic (embeddings) detection arrive in Phase 2 and Phase 3 — see the roadmap in `idea.md`.
+- Only the first hunk per file is captured when building a snapshot from a commit that touched several change blocks in the same file.
+- No GitHub/GitLab/Jira/Linear integration yet — an automatic snapshot's summary is just the commit message as-is, not enriched with issue data.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Phase 1 MVP: Snapshot Store, Git Watcher, Snapshot Generator (with human confirmation), Proximity Detector (location + symbol), Ghost Overlay UI (gutter + CodeLens + hover), manual fallback commands, and an automated test suite.

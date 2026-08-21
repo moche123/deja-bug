@@ -4,20 +4,25 @@ import { loadAllSnapshots, updateSnapshotStats } from '../store/snapshotStore';
 import { detectByLocation } from './locationDetector';
 import { detectBySymbol } from './symbolDetector';
 
+// 'manual' is never produced by detectProximity itself — it's used by
+// listSnapshots (src/ui/commands.ts) to reuse the ghost overlay when the
+// user browses a snapshot on purpose instead of it being auto-detected
+export type ProximityStrategy = 'location' | 'symbol' | 'manual';
+
 export interface ProximityMatch {
 	snapshot: Snapshot;
-	estrategia: 'ubicacion' | 'simbolo';
-	rangoActual?: [number, number];
+	strategy: ProximityStrategy;
+	line: number; // 0-indexed, line in the current document to anchor the ghost on
 }
 
 /**
- * Cascada de estrategias del MVP: ubicación primero (más barata, solo lee
- * blame del archivo guardado), símbolo después y solo sobre los snapshots
- * que la ubicación no resolvió ya (evita mostrar el mismo snapshot dos
- * veces). `activeLine` es la línea del cursor en el editor activo al
- * momento de guardar; si el documento guardado no es el editor activo, se
- * omiten las dos estrategias (ni ubicación ni símbolo tienen una línea de
- * referencia confiable sobre qué se estaba editando).
+ * MVP strategy cascade: location first (cheaper, only reads blame of the
+ * saved file), symbol second and only over the snapshots location didn't
+ * already resolve (avoids showing the same snapshot twice). `activeLine` is
+ * the cursor's line in the active editor at save time; if the saved
+ * document isn't the active editor, both strategies are skipped (neither
+ * location nor symbol has a reliable reference line for what was being
+ * edited).
  */
 export async function detectProximity(
 	workspaceRoot: string,
@@ -29,23 +34,23 @@ export async function detectProximity(
 		return [];
 	}
 
-	const porUbicacion = await detectByLocation(workspaceRoot, document, snapshots, activeLine);
-	const yaMatched = new Set(porUbicacion.map((m) => m.snapshot.id));
+	const byLocation = await detectByLocation(workspaceRoot, document, snapshots, activeLine);
+	const alreadyMatched = new Set(byLocation.map((m) => m.snapshot.id));
 
-	const matches: ProximityMatch[] = porUbicacion.map((m) => ({
+	const matches: ProximityMatch[] = byLocation.map((m) => ({
 		snapshot: m.snapshot,
-		estrategia: 'ubicacion' as const,
-		rangoActual: m.rangoActual,
+		strategy: 'location' as const,
+		line: m.currentRange[0] - 1,
 	}));
 
 	if (activeLine !== undefined) {
-		const restantes = snapshots.filter((s) => !yaMatched.has(s.id));
-		const porSimbolo = await detectBySymbol(document, activeLine, restantes);
-		matches.push(...porSimbolo.map((snapshot) => ({ snapshot, estrategia: 'simbolo' as const })));
+		const remaining = snapshots.filter((s) => !alreadyMatched.has(s.id));
+		const bySymbol = await detectBySymbol(document, activeLine, remaining);
+		matches.push(...bySymbol.map((m) => ({ snapshot: m.snapshot, strategy: 'symbol' as const, line: m.line })));
 	}
 
 	for (const match of matches) {
-		await updateSnapshotStats(workspaceRoot, match.snapshot.id, 'veces_mostrado');
+		await updateSnapshotStats(workspaceRoot, match.snapshot.id, 'timesShown');
 	}
 
 	return matches;

@@ -7,9 +7,9 @@ import { BugFixCommit } from '../watcher/gitWatcher';
 import { findInnermostSymbolAt } from '../detector/symbolUtils';
 
 interface FileHunk {
-	archivo: string;
-	rango_lineas: [number, number];
-	fragmentoBusqueda?: string;
+	file: string;
+	lineRange: [number, number];
+	searchFragment?: string;
 }
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
@@ -42,66 +42,66 @@ function parseFirstHunkPerFile(diffText: string): FileHunk[] {
 		const len = match[2] !== undefined ? parseInt(match[2], 10) : 1;
 		const end = start + Math.max(len, 1) - 1;
 
-		// Preferir la línea ELIMINADA (el código con el bug) para el -S: eso es lo que
-		// hay que rastrear hasta el commit que lo introdujo. Si el hunk es una inserción
-		// pura (no borra nada), usar la línea agregada como fallback débil.
-		let fragmentoEliminado: string | undefined;
-		let fragmentoAgregado: string | undefined;
+		// Prefer the REMOVED line (the buggy code) for the -S search: that's what needs
+		// to be traced back to the commit that introduced it. If the hunk is a pure
+		// insertion (nothing removed), fall back to the first added line.
+		let removedFragment: string | undefined;
+		let addedFragment: string | undefined;
 		for (let j = i + 1; j < lines.length; j++) {
 			const l = lines[j];
 			if (l.startsWith('@@') || l.startsWith('diff --git')) {
 				break;
 			}
-			if (l.startsWith('-') && !l.startsWith('---') && !fragmentoEliminado) {
+			if (l.startsWith('-') && !l.startsWith('---') && !removedFragment) {
 				const trimmed = l.slice(1).trim();
 				if (trimmed) {
-					fragmentoEliminado = trimmed;
+					removedFragment = trimmed;
 				}
 			}
-			if (l.startsWith('+') && !l.startsWith('+++') && !fragmentoAgregado) {
+			if (l.startsWith('+') && !l.startsWith('+++') && !addedFragment) {
 				const trimmed = l.slice(1).trim();
 				if (trimmed) {
-					fragmentoAgregado = trimmed;
+					addedFragment = trimmed;
 				}
 			}
-			if (fragmentoEliminado && fragmentoAgregado) {
+			if (removedFragment && addedFragment) {
 				break;
 			}
 		}
 
-		hunks.push({ archivo: currentFile, rango_lineas: [start, end], fragmentoBusqueda: fragmentoEliminado ?? fragmentoAgregado });
+		hunks.push({ file: currentFile, lineRange: [start, end], searchFragment: removedFragment ?? addedFragment });
 		seen.add(currentFile);
 	}
 
 	return hunks;
 }
 
-async function findCommitCausa(
+export async function findCauseCommit(
 	git: SimpleGit,
-	archivo: string,
-	fragmento: string | undefined,
-	commitFixHash: string
+	file: string,
+	fragment: string | undefined,
+	fixCommitHash: string
 ): Promise<string | null> {
-	if (!fragmento) {
+	if (!fragment) {
 		return null;
 	}
 
 	try {
-		const output = await git.raw(['log', '--format=%H', '-S', fragmento, '--', archivo]);
+		const output = await git.raw(['log', '--format=%H', '-S', fragment, '--', file]);
 		const hashes = output.split('\n').map((h) => h.trim()).filter(Boolean);
-		return hashes.find((h) => h !== commitFixHash) ?? null;
+		return hashes.find((h) => h !== fixCommitHash) ?? null;
 	} catch {
 		return null;
 	}
 }
 
-async function resolveSimbolo(workspaceRoot: string, archivo: string, lineaCero: number): Promise<string | undefined> {
+async function resolveSymbol(workspaceRoot: string, file: string, zeroBasedLine: number): Promise<string | undefined> {
 	try {
-		const uri = vscode.Uri.file(path.join(workspaceRoot, archivo));
-		// abrir el documento asegura que el language server correspondiente lo indexó
-		// antes de pedirle símbolos (si no, executeDocumentSymbolProvider devuelve vacío)
+		const uri = vscode.Uri.file(path.join(workspaceRoot, file));
+		// opening the document forces the matching language server to index it
+		// before asking it for symbols (otherwise executeDocumentSymbolProvider returns empty)
 		await vscode.workspace.openTextDocument(uri);
-		return await findInnermostSymbolAt(uri, lineaCero);
+		return (await findInnermostSymbolAt(uri, zeroBasedLine))?.name;
 	} catch {
 		return undefined;
 	}
@@ -112,23 +112,23 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 	const diffText = await git.raw(['show', commit.hash, '--unified=0', '--format=']);
 	const hunks = parseFirstHunkPerFile(diffText);
 
-	const autor = (await git.raw(['show', '-s', '--format=%an', commit.hash])).trim();
+	const author = (await git.raw(['show', '-s', '--format=%an', commit.hash])).trim();
 	const issueRef = commit.refs.map((r) => r.ref).join(', ') || undefined;
 
 	const drafts: NewSnapshotInput[] = [];
 	for (const hunk of hunks) {
-		const commitCausa = await findCommitCausa(git, hunk.archivo, hunk.fragmentoBusqueda, commit.hash);
-		const simbolo = await resolveSimbolo(workspaceRoot, hunk.archivo, hunk.rango_lineas[0] - 1);
+		const causeCommit = await findCauseCommit(git, hunk.file, hunk.searchFragment, commit.hash);
+		const symbol = await resolveSymbol(workspaceRoot, hunk.file, hunk.lineRange[0] - 1);
 		drafts.push({
-			archivo: hunk.archivo,
-			rango_lineas: hunk.rango_lineas,
-			simbolo,
-			commit_fix: commit.hash,
-			commit_causa: commitCausa,
-			issue_ref: issueRef,
-			resumen_causa: commit.message,
+			file: hunk.file,
+			lineRange: hunk.lineRange,
+			symbol,
+			fixCommit: commit.hash,
+			causeCommit,
+			issueRef,
+			rootCauseSummary: commit.message,
 			tags: [],
-			autor,
+			author,
 		});
 	}
 
@@ -136,30 +136,30 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 }
 
 export async function confirmAndSaveSnapshot(workspaceRoot: string, draft: NewSnapshotInput): Promise<void> {
-	const [start, end] = draft.rango_lineas;
+	const [start, end] = draft.lineRange;
 	const choice = await vscode.window.showInformationMessage(
-		`DejaBug: ¿guardar snapshot de ${draft.archivo}:${start}-${end}?\n"${draft.resumen_causa}"`,
-		'Guardar',
-		'Editar resumen',
-		'Descartar'
+		`DejaBug: save snapshot for ${draft.file}:${start}-${end}?\n"${draft.rootCauseSummary}"`,
+		'Save',
+		'Edit summary',
+		'Discard'
 	);
 
-	if (choice === undefined || choice === 'Descartar') {
+	if (choice === undefined || choice === 'Discard') {
 		return;
 	}
 
-	let resumen = draft.resumen_causa;
-	if (choice === 'Editar resumen') {
+	let summary = draft.rootCauseSummary;
+	if (choice === 'Edit summary') {
 		const edited = await vscode.window.showInputBox({
-			prompt: 'Resumen de causa raíz',
-			value: draft.resumen_causa,
+			prompt: 'Root cause summary',
+			value: draft.rootCauseSummary,
 		});
 		if (edited === undefined) {
 			return;
 		}
-		resumen = edited;
+		summary = edited;
 	}
 
-	const saved = await saveSnapshot(workspaceRoot, { ...draft, resumen_causa: resumen });
-	vscode.window.showInformationMessage(`DejaBug: snapshot guardado (${saved.id.slice(0, 8)})`);
+	const saved = await saveSnapshot(workspaceRoot, { ...draft, rootCauseSummary: summary });
+	vscode.window.showInformationMessage(`DejaBug: snapshot saved (${saved.id.slice(0, 8)})`);
 }

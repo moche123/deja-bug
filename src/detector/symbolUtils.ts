@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
 
+export interface SymbolAt {
+	name: string;
+	range: vscode.Range;
+}
+
 /**
- * Símbolo (función/clase/método) más interno que contiene una línea dada,
- * vía el language server nativo de VS Code. Compartido entre el Snapshot
- * Generator (para poblar `simbolo` al guardar) y el Proximity Detector
- * (para matchear "por símbolo").
+ * Innermost symbol (function/class/method) containing a given line, via
+ * VS Code's native language server. Shared by the Snapshot Generator (to
+ * populate `symbol` on save), the Proximity Detector (to match "by
+ * symbol"), and the Ghost Overlay (to anchor the decoration to the
+ * symbol's start in the current document).
  */
-export async function findInnermostSymbolAt(uri: vscode.Uri, line: number): Promise<string | undefined> {
+export async function findInnermostSymbolAt(uri: vscode.Uri, line: number): Promise<SymbolAt | undefined> {
 	const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
 		'vscode.executeDocumentSymbolProvider',
 		uri
@@ -26,13 +32,13 @@ export async function findInnermostSymbolAt(uri: vscode.Uri, line: number): Prom
 	};
 	walk(symbols);
 
-	const contenedores = flat.filter((s) => s.range.start.line <= line && line <= s.range.end.line);
-	if (contenedores.length === 0) {
+	const containers = flat.filter((s) => s.range.start.line <= line && line <= s.range.end.line);
+	if (containers.length === 0) {
 		return undefined;
 	}
 
-	const masInterno = contenedores.reduce((a, b) =>
+	const innermost = containers.reduce((a, b) =>
 		b.range.end.line - b.range.start.line < a.range.end.line - a.range.start.line ? b : a
 	);
-	return masInterno.name;
+	return { name: innermost.name, range: innermost.range };
 }

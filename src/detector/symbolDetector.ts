@@ -2,26 +2,33 @@ import * as vscode from 'vscode';
 import { Snapshot } from '../store/snapshot';
 import { findInnermostSymbolAt } from './symbolUtils';
 
+export interface SymbolMatch {
+	snapshot: Snapshot;
+	line: number; // 0-indexed, start line of the symbol in the current document
+}
+
 /**
- * Match "por símbolo": ubica la función/clase/método que contiene la línea
- * activa y lo compara contra `snapshot.simbolo`, sin importar el archivo.
- * Solo corre sobre snapshots que ya tienen `simbolo` poblado (lo asigna el
- * Snapshot Generator al guardar).
+ * "By symbol" match: finds the function/class/method containing the active
+ * line and compares it against `snapshot.symbol`, regardless of the file.
+ * Only runs over snapshots that already have `symbol` populated (set by the
+ * Snapshot Generator on save).
  */
 export async function detectBySymbol(
 	document: vscode.TextDocument,
 	activeLine: number,
 	snapshots: Snapshot[]
-): Promise<Snapshot[]> {
-	const conSimbolo = snapshots.filter((s) => !!s.simbolo);
-	if (conSimbolo.length === 0) {
+): Promise<SymbolMatch[]> {
+	const withSymbol = snapshots.filter((s) => !!s.symbol);
+	if (withSymbol.length === 0) {
 		return [];
 	}
 
-	const simbolo = await findInnermostSymbolAt(document.uri, activeLine);
-	if (!simbolo) {
+	const currentSymbol = await findInnermostSymbolAt(document.uri, activeLine);
+	if (!currentSymbol) {
 		return [];
 	}
 
-	return conSimbolo.filter((s) => s.simbolo === simbolo);
+	return withSymbol
+		.filter((snapshot) => snapshot.symbol === currentSymbol.name)
+		.map((snapshot) => ({ snapshot, line: currentSymbol.range.start.line }));
 }
