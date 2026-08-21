@@ -1,4 +1,4 @@
-# DejaBug 👻
+# DejaBug 👻 - VSCode Extension
 
 DejaBug captures the context of every bug fixed in your repo as a **snapshot** (why it happened, how it was fixed, in which commit) and watches new code you write in the background to detect matches against those snapshots. When it finds one, it shows a discreet warning — a "ghost" 👻 — in the gutter, with a CodeLens and a hover card summarizing the fix and linking back to it.
 
