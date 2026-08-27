@@ -17,6 +17,9 @@ export class GhostHoverProvider implements vscode.HoverProvider {
 			md.appendMarkdown('### 👻 Similar bug fixed before\n\n');
 			md.appendMarkdown(`${snapshot.rootCauseSummary}\n\n`);
 			md.appendMarkdown(`**Detected by:** ${STRATEGY_LONG_LABEL[ghost.strategy]}\\\n`);
+			if (ghost.similarity !== undefined) {
+				md.appendMarkdown(`**Similarity:** ${(ghost.similarity * 100).toFixed(0)}%\\\n`);
+			}
 			md.appendMarkdown(`**Fix date:** ${new Date(snapshot.date).toLocaleDateString('en-US')}\\\n`);
 			md.appendMarkdown(`**Author:** ${snapshot.author}\\\n`);
 			if (snapshot.issueRef) {

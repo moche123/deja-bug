@@ -6,6 +6,7 @@ import { buildSnapshotDrafts, confirmAndSaveSnapshot } from './generator/snapsho
 import { detectProximity } from './detector/proximityDetector';
 import { registerGhostOverlay, publishGhosts } from './ui/ghostOverlay';
 import { createSnapshotFromSelection, listSnapshots, setGithubToken, setGitlabToken, findDuplicateSnapshotsCommand } from './ui/commands';
+import { showTeamPatterns } from './ui/teamPatternsPanel';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -45,7 +46,8 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.commands.registerCommand('dejabug.listSnapshots', () => listSnapshots(workspaceRoot)),
 			vscode.commands.registerCommand('dejabug.setGithubToken', () => setGithubToken(context.secrets)),
 			vscode.commands.registerCommand('dejabug.setGitlabToken', () => setGitlabToken(context.secrets)),
-			vscode.commands.registerCommand('dejabug.findDuplicateSnapshots', () => findDuplicateSnapshotsCommand(workspaceRoot))
+			vscode.commands.registerCommand('dejabug.findDuplicateSnapshots', () => findDuplicateSnapshotsCommand(workspaceRoot)),
+			vscode.commands.registerCommand('dejabug.showTeamPatterns', () => showTeamPatterns(workspaceRoot))
 		);
 
 		context.subscriptions.push(

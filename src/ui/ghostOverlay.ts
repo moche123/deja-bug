@@ -6,6 +6,7 @@ import { applyGhostDecorations } from './ghostDecoration';
 import { GhostCodeLensProvider } from './ghostCodeLens';
 import { GhostHoverProvider } from './ghostHover';
 import { setGhosts, getGhosts, addGhost, dismissGhost, clearGhosts, onDidChangeGhosts } from './ghostState';
+import { recordSemanticFeedback } from '../detector/semanticFeedback';
 
 function normalizeUri(uri: vscode.Uri | string): vscode.Uri {
 	return typeof uri === 'string' ? vscode.Uri.parse(uri) : uri;
@@ -60,16 +61,27 @@ export function registerGhostOverlay(context: vscode.ExtensionContext, workspace
 		}),
 
 		vscode.commands.registerCommand('dejabug.markUseful', async (uri: vscode.Uri | string, snapshotId: string) => {
+			const docUri = normalizeUri(uri);
+			const ghost = getGhosts(docUri).find((g) => g.snapshot.id === snapshotId);
 			await updateSnapshotStats(workspaceRoot, snapshotId, 'timesUseful');
-			dismissGhost(normalizeUri(uri), snapshotId);
+			if (ghost?.strategy === 'semantic') {
+				await recordSemanticFeedback(context, true);
+			}
+			dismissGhost(docUri, snapshotId);
 			vscode.window.showInformationMessage('DejaBug: marked as useful, thanks!');
 		}),
 
-		vscode.commands.registerCommand('dejabug.markNotRelevant', (uri: vscode.Uri | string, snapshotId: string) => {
-			// MVP: nothing gets decremented yet (no field for that in the data model),
-			// just dismiss it from view and log it as a seed for Phase 3's threshold tuning
-			console.log(`[dejabug] snapshot ${snapshotId} marked as not relevant in ${normalizeUri(uri).fsPath}`);
-			dismissGhost(normalizeUri(uri), snapshotId);
+		vscode.commands.registerCommand('dejabug.markNotRelevant', async (uri: vscode.Uri | string, snapshotId: string) => {
+			const docUri = normalizeUri(uri);
+			const ghost = getGhosts(docUri).find((g) => g.snapshot.id === snapshotId);
+			// MVP: nothing gets decremented on the snapshot itself yet (no field for that
+			// in the data model) — semantic ghosts specifically feed the Phase 3 threshold
+			// feedback loop instead (see semanticFeedback.ts)
+			console.log(`[dejabug] snapshot ${snapshotId} marked as not relevant in ${docUri.fsPath}`);
+			if (ghost?.strategy === 'semantic') {
+				await recordSemanticFeedback(context, false);
+			}
+			dismissGhost(docUri, snapshotId);
 		})
 	);
 }

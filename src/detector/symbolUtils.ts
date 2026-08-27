@@ -42,3 +42,26 @@ export async function findInnermostSymbolAt(uri: vscode.Uri, line: number): Prom
 	);
 	return { name: innermost.name, range: innermost.range };
 }
+
+// used only when the active line isn't inside a resolvable symbol (e.g. top-level
+// script code) — same idea as PROXIMITY_MARGIN_LINES in the location detector,
+// just wider since here it delimits the whole block to analyze, not a margin
+const FALLBACK_BLOCK_MARGIN_LINES = 10;
+
+/**
+ * The block of code around `activeLine` to analyze — the containing symbol's
+ * range if one resolves, otherwise a fixed line margin around the cursor.
+ * Shared by the structural and semantic detectors (both need "the block
+ * around the cursor", not just the single line) and by the Snapshot
+ * Generator's fingerprint/embedding computation.
+ */
+export async function resolveBlockRange(document: vscode.TextDocument, activeLine: number): Promise<vscode.Range> {
+	const symbol = await findInnermostSymbolAt(document.uri, activeLine);
+	if (symbol) {
+		return symbol.range;
+	}
+
+	const start = Math.max(0, activeLine - FALLBACK_BLOCK_MARGIN_LINES);
+	const end = Math.min(document.lineCount - 1, activeLine + FALLBACK_BLOCK_MARGIN_LINES);
+	return new vscode.Range(start, 0, end, document.lineAt(end).text.length);
+}

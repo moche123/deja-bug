@@ -35,7 +35,10 @@ async function main() {
 		sourcesContent: false,
 		platform: 'node',
 		outfile: 'dist/extension.js',
-		external: ['vscode'],
+		// @huggingface/transformers ships dynamic requires and native/WASM ONNX
+		// runtime assets that esbuild can't bundle cleanly — left external and
+		// shipped via its real node_modules/ in the packaged .vsix instead
+		external: ['vscode', '@huggingface/transformers', 'onnxruntime-node', 'sharp'],
 		logLevel: 'silent',
 		plugins: [
 			/* add to the end of plugins array */

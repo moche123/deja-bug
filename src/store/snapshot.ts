@@ -13,10 +13,11 @@ export interface Snapshot {
 	author: string;
 	timesShown: number;
 	timesUseful: number;
-	schemaVersion: number;          // 1 = Fase 1, 2 = Fase 2. Ver nota de migración abajo.
+	schemaVersion: number;          // 1 = Fase 1, 2 = Fase 2, 3 = Fase 3. Ver nota de migración abajo.
 	astFingerprint?: string;        // huella normalizada del subárbol de AST alrededor del fix
 	issueTitle?: string;            // traído desde GitHub/GitLab, si el connector pudo resolverlo
 	issueLabels?: string[];         // labels del issue/PR, alimentan el campo `tags`
+	embedding?: number[];           // vector del bloque de código alrededor del fix, modelo local (Fase 3)
 }
 
 

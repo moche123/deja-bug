@@ -6,6 +6,7 @@ import { NewSnapshotInput } from '../store/snapshot';
 import { BugFixCommit } from '../watcher/gitWatcher';
 import { findInnermostSymbolAt, SymbolAt } from '../detector/symbolUtils';
 import { computeAstFingerprint } from '../detector/astFingerprint';
+import { computeEmbedding } from '../embeddings/embeddingProvider';
 import { resolveIssueContext } from '../connector/issueTrackerConnector';
 
 interface FileHunk {
@@ -112,13 +113,19 @@ async function resolveSymbol(workspaceRoot: string, file: string, zeroBasedLine:
 	}
 }
 
+interface HunkAnalysis {
+	astFingerprint?: string;
+	embedding?: number[];
+}
+
 /**
- * AST fingerprint of the block around the hunk: the containing symbol's
- * range if one was resolved, otherwise the hunk's own line range. Reads the
- * current file on disk (post-fix state) — same source `resolveSymbol`
- * already reads for the `symbol` field.
+ * Structural fingerprint and semantic embedding of the block around the
+ * hunk: the containing symbol's range if one was resolved, otherwise the
+ * hunk's own line range. Reads the current file on disk (post-fix state) —
+ * same source `resolveSymbol` already reads for the `symbol` field. Both
+ * analyses share the same document read and range resolution.
  */
-async function computeHunkFingerprint(workspaceRoot: string, hunk: FileHunk, symbol: SymbolAt | undefined): Promise<string | undefined> {
+async function computeHunkAnalysis(workspaceRoot: string, hunk: FileHunk, symbol: SymbolAt | undefined): Promise<HunkAnalysis> {
 	try {
 		const uri = vscode.Uri.file(path.join(workspaceRoot, hunk.file));
 		const document = await vscode.workspace.openTextDocument(uri);
@@ -131,10 +138,16 @@ async function computeHunkFingerprint(workspaceRoot: string, hunk: FileHunk, sym
 			range = new vscode.Range(hunk.lineRange[0] - 1, 0, endLine, document.lineAt(endLine).text.length);
 		}
 
-		const patterns = computeAstFingerprint(document.getText(), document.offsetAt(range.start), document.offsetAt(range.end));
-		return patterns.length > 0 ? patterns.join(',') : undefined;
+		const blockText = document.getText(range);
+		const patterns = computeAstFingerprint(blockText, 0, blockText.length);
+		const embedding = await computeEmbedding(blockText);
+
+		return {
+			astFingerprint: patterns.length > 0 ? patterns.join(',') : undefined,
+			embedding: embedding ?? undefined,
+		};
 	} catch {
-		return undefined;
+		return {};
 	}
 }
 
@@ -154,7 +167,7 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 	for (const hunk of hunks) {
 		const causeCommit = await findCauseCommit(git, hunk.file, hunk.searchFragment, commit.hash);
 		const symbol = await resolveSymbol(workspaceRoot, hunk.file, hunk.lineRange[0] - 1);
-		const astFingerprint = await computeHunkFingerprint(workspaceRoot, hunk, symbol);
+		const { astFingerprint, embedding } = await computeHunkAnalysis(workspaceRoot, hunk, symbol);
 		drafts.push({
 			file: hunk.file,
 			lineRange: hunk.lineRange,
@@ -166,6 +179,7 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 			tags: issueContext?.labels ?? [],
 			author,
 			astFingerprint,
+			embedding,
 			issueTitle: issueContext?.title || undefined,
 			issueLabels: issueContext?.labels,
 		});

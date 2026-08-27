@@ -1,17 +1,12 @@
 import * as vscode from 'vscode';
 import { Snapshot } from '../store/snapshot';
-import { findInnermostSymbolAt } from './symbolUtils';
+import { resolveBlockRange } from './symbolUtils';
 import { computeAstFingerprint } from './astFingerprint';
 
 export interface StructuralMatch {
 	snapshot: Snapshot;
 	line: number; // 0-indexed, start line of the matched block in the current document
 }
-
-// used only when the active line isn't inside a resolvable symbol (e.g. top-level
-// script code) — same idea as PROXIMITY_MARGIN_LINES in the location detector,
-// just wider since here it delimits the whole block to fingerprint, not a margin
-const FALLBACK_BLOCK_MARGIN_LINES = 10;
 
 /**
  * "By structure" match: the most expensive strategy in the cascade, so it
@@ -31,18 +26,8 @@ export async function detectByStructure(
 		return [];
 	}
 
-	const symbol = await findInnermostSymbolAt(document.uri, activeLine);
-	let range: vscode.Range;
-	let anchorLine: number;
-	if (symbol) {
-		range = symbol.range;
-		anchorLine = symbol.range.start.line;
-	} else {
-		const start = Math.max(0, activeLine - FALLBACK_BLOCK_MARGIN_LINES);
-		const end = Math.min(document.lineCount - 1, activeLine + FALLBACK_BLOCK_MARGIN_LINES);
-		range = new vscode.Range(start, 0, end, document.lineAt(end).text.length);
-		anchorLine = start;
-	}
+	const range = await resolveBlockRange(document, activeLine);
+	const anchorLine = range.start.line;
 
 	const rangeStart = document.offsetAt(range.start);
 	const rangeEnd = document.offsetAt(range.end);
