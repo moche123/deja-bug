@@ -4,8 +4,6 @@ DejaBug captures the context of every bug fixed in your repo as a **snapshot** (
 
 It's not a fixed-rule linter: it's the team's collective memory, triggered by code proximity.
 
-**Phases 1, 2, and 3 are complete** (Sentry integration excepted — see Known Issues). The full step-by-step of how Phase 1 was built lives in `MVP_FASE1.md`; the instructions plans followed for Phase 2 and Phase 3 live in `MVP_FASE2.md` and `MVP_FASE3.md` — all at the root of the repo.
-
 ## Snapshots
 
 ### Hover feature
