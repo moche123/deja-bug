@@ -3,11 +3,12 @@ import { Snapshot } from '../store/snapshot';
 import { loadAllSnapshots, updateSnapshotStats } from '../store/snapshotStore';
 import { detectByLocation } from './locationDetector';
 import { detectBySymbol } from './symbolDetector';
+import { detectByStructure } from './structuralDetector';
 
 // 'manual' is never produced by detectProximity itself — it's used by
 // listSnapshots (src/ui/commands.ts) to reuse the ghost overlay when the
 // user browses a snapshot on purpose instead of it being auto-detected
-export type ProximityStrategy = 'location' | 'symbol' | 'manual';
+export type ProximityStrategy = 'location' | 'symbol' | 'structural' | 'manual';
 
 export interface ProximityMatch {
 	snapshot: Snapshot;
@@ -16,13 +17,13 @@ export interface ProximityMatch {
 }
 
 /**
- * MVP strategy cascade: location first (cheaper, only reads blame of the
- * saved file), symbol second and only over the snapshots location didn't
- * already resolve (avoids showing the same snapshot twice). `activeLine` is
- * the cursor's line in the active editor at save time; if the saved
- * document isn't the active editor, both strategies are skipped (neither
- * location nor symbol has a reliable reference line for what was being
- * edited).
+ * Strategy cascade, cheapest to most expensive: location first (only reads
+ * blame of the saved file), symbol second, structure third — each pass only
+ * runs over the snapshots the previous ones didn't already resolve (avoids
+ * showing the same snapshot twice). `activeLine` is the cursor's line in the
+ * active editor at save time; if the saved document isn't the active
+ * editor, all three strategies are skipped (none of them has a reliable
+ * reference line for what was being edited).
  */
 export async function detectProximity(
 	workspaceRoot: string,
@@ -44,9 +45,16 @@ export async function detectProximity(
 	}));
 
 	if (activeLine !== undefined) {
-		const remaining = snapshots.filter((s) => !alreadyMatched.has(s.id));
-		const bySymbol = await detectBySymbol(document, activeLine, remaining);
+		const remainingAfterLocation = snapshots.filter((s) => !alreadyMatched.has(s.id));
+		const bySymbol = await detectBySymbol(document, activeLine, remainingAfterLocation);
 		matches.push(...bySymbol.map((m) => ({ snapshot: m.snapshot, strategy: 'symbol' as const, line: m.line })));
+		for (const m of bySymbol) {
+			alreadyMatched.add(m.snapshot.id);
+		}
+
+		const remainingAfterSymbol = snapshots.filter((s) => !alreadyMatched.has(s.id));
+		const byStructure = await detectByStructure(document, activeLine, remainingAfterSymbol);
+		matches.push(...byStructure.map((m) => ({ snapshot: m.snapshot, strategy: 'structural' as const, line: m.line })));
 	}
 
 	for (const match of matches) {

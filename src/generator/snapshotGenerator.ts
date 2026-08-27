@@ -4,7 +4,8 @@ import simpleGit, { SimpleGit } from 'simple-git';
 import { saveSnapshot } from '../store/snapshotStore';
 import { NewSnapshotInput } from '../store/snapshot';
 import { BugFixCommit } from '../watcher/gitWatcher';
-import { findInnermostSymbolAt } from '../detector/symbolUtils';
+import { findInnermostSymbolAt, SymbolAt } from '../detector/symbolUtils';
+import { computeAstFingerprint } from '../detector/astFingerprint';
 
 interface FileHunk {
 	file: string;
@@ -95,13 +96,39 @@ export async function findCauseCommit(
 	}
 }
 
-async function resolveSymbol(workspaceRoot: string, file: string, zeroBasedLine: number): Promise<string | undefined> {
+async function resolveSymbol(workspaceRoot: string, file: string, zeroBasedLine: number): Promise<SymbolAt | undefined> {
 	try {
 		const uri = vscode.Uri.file(path.join(workspaceRoot, file));
 		// opening the document forces the matching language server to index it
 		// before asking it for symbols (otherwise executeDocumentSymbolProvider returns empty)
 		await vscode.workspace.openTextDocument(uri);
-		return (await findInnermostSymbolAt(uri, zeroBasedLine))?.name;
+		return await findInnermostSymbolAt(uri, zeroBasedLine);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * AST fingerprint of the block around the hunk: the containing symbol's
+ * range if one was resolved, otherwise the hunk's own line range. Reads the
+ * current file on disk (post-fix state) — same source `resolveSymbol`
+ * already reads for the `symbol` field.
+ */
+async function computeHunkFingerprint(workspaceRoot: string, hunk: FileHunk, symbol: SymbolAt | undefined): Promise<string | undefined> {
+	try {
+		const uri = vscode.Uri.file(path.join(workspaceRoot, hunk.file));
+		const document = await vscode.workspace.openTextDocument(uri);
+
+		let range: vscode.Range;
+		if (symbol) {
+			range = symbol.range;
+		} else {
+			const endLine = Math.min(hunk.lineRange[1] - 1, document.lineCount - 1);
+			range = new vscode.Range(hunk.lineRange[0] - 1, 0, endLine, document.lineAt(endLine).text.length);
+		}
+
+		const patterns = computeAstFingerprint(document.getText(), document.offsetAt(range.start), document.offsetAt(range.end));
+		return patterns.length > 0 ? patterns.join(',') : undefined;
 	} catch {
 		return undefined;
 	}
@@ -119,16 +146,18 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 	for (const hunk of hunks) {
 		const causeCommit = await findCauseCommit(git, hunk.file, hunk.searchFragment, commit.hash);
 		const symbol = await resolveSymbol(workspaceRoot, hunk.file, hunk.lineRange[0] - 1);
+		const astFingerprint = await computeHunkFingerprint(workspaceRoot, hunk, symbol);
 		drafts.push({
 			file: hunk.file,
 			lineRange: hunk.lineRange,
-			symbol,
+			symbol: symbol?.name,
 			fixCommit: commit.hash,
 			causeCommit,
 			issueRef,
 			rootCauseSummary: commit.message,
 			tags: [],
 			author,
+			astFingerprint,
 		});
 	}
 

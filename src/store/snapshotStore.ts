@@ -44,7 +44,10 @@ export async function loadAllSnapshots(workspaceRoot: string): Promise<Snapshot[
 	const snapshots = await Promise.all(
 		jsonFiles.map(async (file) => {
 			const raw = await fs.readFile(path.join(dir, file), 'utf-8');
-			return JSON.parse(raw) as Snapshot;
+			const snapshot = JSON.parse(raw) as Snapshot;
+			// Phase 1 snapshots predate schemaVersion — assume 1 in memory rather
+			// than rewrite the file just for reading it (see MVP_FASE2.md, Paso 0)
+			return snapshot.schemaVersion === undefined ? { ...snapshot, schemaVersion: 1 } : snapshot;
 		})
 	);
 
