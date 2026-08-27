@@ -27,6 +27,7 @@ export async function saveSnapshot(workspaceRoot: string, input: NewSnapshotInpu
 		date: new Date().toISOString(),
 		timesShown: 0,
 		timesUseful: 0,
+		schemaVersion: 1,
 	};
 
 	await fs.writeFile(snapshotFile(workspaceRoot, snapshot.id), JSON.stringify(snapshot, null, 2), 'utf-8');
