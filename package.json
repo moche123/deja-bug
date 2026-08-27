@@ -35,6 +35,14 @@
       {
         "command": "dejabug.listSnapshots",
         "title": "DejaBug: View All Snapshots"
+      },
+      {
+        "command": "dejabug.setGithubToken",
+        "title": "DejaBug: Set GitHub Token"
+      },
+      {
+        "command": "dejabug.setGitlabToken",
+        "title": "DejaBug: Set GitLab Token"
       }
     ]
   },

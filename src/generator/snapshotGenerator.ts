@@ -6,6 +6,7 @@ import { NewSnapshotInput } from '../store/snapshot';
 import { BugFixCommit } from '../watcher/gitWatcher';
 import { findInnermostSymbolAt, SymbolAt } from '../detector/symbolUtils';
 import { computeAstFingerprint } from '../detector/astFingerprint';
+import { resolveIssueContext } from '../connector/issueTrackerConnector';
 
 interface FileHunk {
 	file: string;
@@ -15,7 +16,7 @@ interface FileHunk {
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
-function parseFirstHunkPerFile(diffText: string): FileHunk[] {
+export function parseFirstHunkPerFile(diffText: string): FileHunk[] {
 	const hunks: FileHunk[] = [];
 	const seen = new Set<string>();
 	let currentFile: string | null = null;
@@ -26,7 +27,10 @@ function parseFirstHunkPerFile(diffText: string): FileHunk[] {
 
 		if (line.startsWith('+++ ')) {
 			const filePath = line.slice(4).trim();
-			currentFile = filePath === '/dev/null' ? null : filePath.replace(/^b\//, '');
+			const resolved = filePath === '/dev/null' ? null : filePath.replace(/^b\//, '');
+			// a commit can carry pending .dejabug/ writes (e.g. timesShown bumps from
+			// showing a ghost) alongside the real fix — never treat those as "fixed code"
+			currentFile = resolved && !resolved.startsWith('.dejabug/') ? resolved : null;
 			continue;
 		}
 
@@ -134,13 +138,17 @@ async function computeHunkFingerprint(workspaceRoot: string, hunk: FileHunk, sym
 	}
 }
 
-export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixCommit): Promise<NewSnapshotInput[]> {
+export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixCommit, secrets: vscode.SecretStorage): Promise<NewSnapshotInput[]> {
 	const git = simpleGit(workspaceRoot);
 	const diffText = await git.raw(['show', commit.hash, '--unified=0', '--format=']);
 	const hunks = parseFirstHunkPerFile(diffText);
 
 	const author = (await git.raw(['show', '-s', '--format=%an', commit.hash])).trim();
 	const issueRef = commit.refs.map((r) => r.ref).join(', ') || undefined;
+	// only the first ref is looked up — enough for the MVP, and the common
+	// case of a fix commit closing more than one issue is rare
+	const issueContext = commit.refs[0] ? await resolveIssueContext(workspaceRoot, commit.refs[0].ref, secrets) : null;
+	const rootCauseSummary = issueContext?.title ? `${commit.message} — ${issueContext.title}` : commit.message;
 
 	const drafts: NewSnapshotInput[] = [];
 	for (const hunk of hunks) {
@@ -154,10 +162,12 @@ export async function buildSnapshotDrafts(workspaceRoot: string, commit: BugFixC
 			fixCommit: commit.hash,
 			causeCommit,
 			issueRef,
-			rootCauseSummary: commit.message,
-			tags: [],
+			rootCauseSummary,
+			tags: issueContext?.labels ?? [],
 			author,
 			astFingerprint,
+			issueTitle: issueContext?.title || undefined,
+			issueLabels: issueContext?.labels,
 		});
 	}
 

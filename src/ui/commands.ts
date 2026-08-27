@@ -6,6 +6,7 @@ import { Snapshot } from '../store/snapshot';
 import { findInnermostSymbolAt } from '../detector/symbolUtils';
 import { confirmAndSaveSnapshot, findCauseCommit } from '../generator/snapshotGenerator';
 import { revealSnapshot } from './ghostOverlay';
+import { GITHUB_TOKEN_KEY, GITLAB_TOKEN_KEY } from '../connector/issueTrackerConnector';
 
 /**
  * Manual fallback for when a fix commit didn't follow the `Fixes #`/`Closes
@@ -70,6 +71,32 @@ export async function createSnapshotFromSelection(workspaceRoot: string): Promis
 		tags: [],
 		author,
 	});
+}
+
+async function setToken(secrets: vscode.SecretStorage, key: string, providerLabel: string): Promise<void> {
+	const token = await vscode.window.showInputBox({
+		prompt: `${providerLabel} personal access token (read-only scope on issues only — never a token with write access)`,
+		password: true,
+		placeHolder: 'Leave empty and press Enter to clear the stored token',
+	});
+	if (token === undefined) {
+		return;
+	}
+	if (token === '') {
+		await secrets.delete(key);
+		vscode.window.showInformationMessage(`DejaBug: ${providerLabel} token cleared.`);
+		return;
+	}
+	await secrets.store(key, token);
+	vscode.window.showInformationMessage(`DejaBug: ${providerLabel} token saved.`);
+}
+
+export function setGithubToken(secrets: vscode.SecretStorage): Promise<void> {
+	return setToken(secrets, GITHUB_TOKEN_KEY, 'GitHub');
+}
+
+export function setGitlabToken(secrets: vscode.SecretStorage): Promise<void> {
+	return setToken(secrets, GITLAB_TOKEN_KEY, 'GitLab');
 }
 
 interface SnapshotQuickPickItem extends vscode.QuickPickItem {
