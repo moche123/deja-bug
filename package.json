@@ -43,6 +43,10 @@
       {
         "command": "dejabug.setGitlabToken",
         "title": "DejaBug: Set GitLab Token"
+      },
+      {
+        "command": "dejabug.findDuplicateSnapshots",
+        "title": "DejaBug: Find Duplicate Snapshots"
       }
     ]
   },

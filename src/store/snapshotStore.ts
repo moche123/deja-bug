@@ -64,7 +64,14 @@ export async function updateSnapshotStats(
 	const snapshot = JSON.parse(raw) as Snapshot;
 
 	snapshot[field] += 1;
+	// on-demand migration: any snapshot rewritten under normal use (a ghost shown
+	// or marked useful) ends up persisted as schemaVersion 2 — see MVP_FASE2.md, Paso 3
+	snapshot.schemaVersion = 2;
 
 	await fs.writeFile(file, JSON.stringify(snapshot, null, 2), 'utf-8');
 	return snapshot;
+}
+
+export async function deleteSnapshot(workspaceRoot: string, id: string): Promise<void> {
+	await fs.unlink(snapshotFile(workspaceRoot, id));
 }

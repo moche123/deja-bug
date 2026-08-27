@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import simpleGit from 'simple-git';
-import { loadAllSnapshots } from '../store/snapshotStore';
+import { loadAllSnapshots, deleteSnapshot } from '../store/snapshotStore';
 import { Snapshot } from '../store/snapshot';
 import { findInnermostSymbolAt } from '../detector/symbolUtils';
 import { confirmAndSaveSnapshot, findCauseCommit } from '../generator/snapshotGenerator';
 import { revealSnapshot } from './ghostOverlay';
 import { GITHUB_TOKEN_KEY, GITLAB_TOKEN_KEY } from '../connector/issueTrackerConnector';
+import { findDuplicateSnapshots } from '../store/duplicateFinder';
 
 /**
  * Manual fallback for when a fix commit didn't follow the `Fixes #`/`Closes
@@ -139,5 +140,46 @@ export async function listSnapshots(workspaceRoot: string): Promise<void> {
 		await revealSnapshot(picked.snapshot, uri, line);
 	} catch {
 		vscode.window.showErrorMessage(`DejaBug: couldn't open ${picked.snapshot.file} (did it move or get deleted?).`);
+	}
+}
+
+/**
+ * Groups snapshots that look like duplicates (same fix commit, or same
+ * file with overlapping line ranges — typically two branches that each
+ * snapshotted the same fix before merging) and lets the user pick which
+ * one to keep per group via a QuickPick. Nothing is deleted without that
+ * explicit per-group choice; skipping a group (Esc) leaves it untouched.
+ */
+export async function findDuplicateSnapshotsCommand(workspaceRoot: string): Promise<void> {
+	const snapshots = await loadAllSnapshots(workspaceRoot);
+	const groups = findDuplicateSnapshots(snapshots);
+
+	if (groups.length === 0) {
+		vscode.window.showInformationMessage('DejaBug: no duplicate snapshots found.');
+		return;
+	}
+
+	for (const group of groups) {
+		const sorted = [...group].sort((a, b) => b.date.localeCompare(a.date));
+		const items: SnapshotQuickPickItem[] = sorted.map((snapshot) => ({
+			label: `$(circle-outline) ${snapshot.file}:${snapshot.lineRange[0]}-${snapshot.lineRange[1]}`,
+			description: new Date(snapshot.date).toLocaleString(),
+			detail: snapshot.rootCauseSummary,
+			snapshot,
+		}));
+
+		const picked = await vscode.window.showQuickPick(items, {
+			placeHolder: `DejaBug: ${group.length} duplicates for ${sorted[0].file} — pick the one to keep`,
+			matchOnDetail: true,
+		});
+		if (!picked) {
+			continue;
+		}
+
+		const toRemove = group.filter((s) => s.id !== picked.snapshot.id);
+		for (const snapshot of toRemove) {
+			await deleteSnapshot(workspaceRoot, snapshot.id);
+		}
+		vscode.window.showInformationMessage(`DejaBug: kept 1 snapshot, removed ${toRemove.length} duplicate(s) for ${sorted[0].file}.`);
 	}
 }
